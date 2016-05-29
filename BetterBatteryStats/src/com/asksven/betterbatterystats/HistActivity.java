@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 asksven
+ * Copyright (C) 2011-2015 asksven
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,26 +22,25 @@ package com.asksven.betterbatterystats;
 
 import java.util.ArrayList;
 
-import android.app.ListActivity;
 import android.app.ProgressDialog;
 import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.content.res.Configuration;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.preference.PreferenceManager;
+import android.support.design.widget.Snackbar;
+import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.widget.Toast;
 
 import com.asksven.android.common.privateapiproxies.BatteryStatsProxy;
 import com.asksven.android.common.privateapiproxies.HistoryItem;
+import com.asksven.android.system.AndroidVersion;
 import com.asksven.betterbatterystats.R;
 import com.asksven.betterbatterystats.adapters.HistAdapter;
 
-public class HistActivity extends ListActivity
+public class HistActivity extends ActionBarListActivity
 {
 	/**
 	 * The logging TAG
@@ -66,6 +65,13 @@ public class HistActivity extends ListActivity
 	{
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.history);
+		
+		Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+		toolbar.setTitle(getString(R.string.label_series));
+
+	    setSupportActionBar(toolbar);
+	    getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+	    getSupportActionBar().setDisplayUseLogoEnabled(false);
 	}
 	
 	/* Request updates at startup */
@@ -153,7 +159,7 @@ public class HistActivity extends ListActivity
 	    	if (m_progressDialog == null)
 	    	{
 		    	m_progressDialog = new ProgressDialog(HistActivity.this);
-		    	m_progressDialog.setMessage("Computing...");
+		    	m_progressDialog.setMessage(getString(R.string.message_computing));
 		    	m_progressDialog.setIndeterminate(true);
 		    	m_progressDialog.setCancelable(false);
 		    	m_progressDialog.show();
@@ -163,10 +169,30 @@ public class HistActivity extends ListActivity
 	
 	/**
 	 * Get the Stat to be displayed
+	 * 
 	 * @return a List of StatElements sorted (descending)
 	 */
-	private ArrayList<HistoryItem> getHistList()
+	protected ArrayList<HistoryItem> getHistList()
 	{
-		return BatteryGraphActivity.m_histList;
+		if (AndroidVersion.isFroyo())
+		{
+			Snackbar
+			  .make(findViewById(android.R.id.content), R.string.message_no_hist_froyo, Snackbar.LENGTH_LONG)
+			  .show();
+//			Toast.makeText(this, getString(R.string.message_no_hist_froyo), Toast.LENGTH_SHORT).show();
+		}
+		ArrayList<HistoryItem> myRet = new ArrayList<HistoryItem>();
+
+		BatteryStatsProxy mStats = BatteryStatsProxy.getInstance(this);
+		try
+		{
+			myRet = mStats.getHistory(this);
+			//mStats.dumpHistory(this);
+		}
+		catch (Exception e)
+		{
+			Log.e(TAG, "An error occured while retrieving history. No result");
+		}
+		return myRet;
 	}
 }

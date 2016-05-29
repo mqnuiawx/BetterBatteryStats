@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 asksven
+ * Copyright (C) 2011-2015 asksven
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,13 +22,14 @@ package com.asksven.betterbatterystats;
 
 import java.util.ArrayList;
 
-import android.app.ListActivity;
 import android.app.ProgressDialog;
-import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.preference.PreferenceManager;
+import android.support.design.widget.Snackbar;
+import android.support.v7.widget.Toolbar;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -42,18 +43,13 @@ import android.widget.Toast;
 
 import com.asksven.android.common.privateapiproxies.BatteryInfoUnavailableException;
 import com.asksven.android.common.privateapiproxies.BatteryStatsProxy;
-import com.asksven.android.common.privateapiproxies.BatteryStatsTypes;
 import com.asksven.android.common.privateapiproxies.StatElement;
 import com.asksven.android.common.utils.DateUtils;
 import com.asksven.betterbatterystats.R;
-import com.asksven.betterbatterystats.adapters.ReferencesAdapter;
 import com.asksven.betterbatterystats.adapters.StatsAdapter;
-import com.asksven.betterbatterystats.data.GoogleAnalytics;
-import com.asksven.betterbatterystats.data.Reference;
-import com.asksven.betterbatterystats.data.ReferenceStore;
 import com.asksven.betterbatterystats.data.StatsProvider;
 
-public class RawStatsActivity extends ListActivity implements AdapterView.OnItemSelectedListener
+public class RawStatsActivity extends ActionBarListActivity implements AdapterView.OnItemSelectedListener
 {
 	/**
 	 * The logging TAG
@@ -83,21 +79,45 @@ public class RawStatsActivity extends ListActivity implements AdapterView.OnItem
 	protected void onCreate(Bundle savedInstanceState)
 	{
 		super.onCreate(savedInstanceState);
+		
 		setContentView(R.layout.raw_stats);
 		
-		setTitle("Raw Stats");
+		Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+		toolbar.setTitle(getString(R.string.label_raw_stats));
+
+	    setSupportActionBar(toolbar);
+	    getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+	    getSupportActionBar().setDisplayUseLogoEnabled(false);
 		
 		// Spinner for selecting the stat
 		Spinner spinnerStat = (Spinner) findViewById(R.id.spinnerStat);
 		
 		ArrayAdapter spinnerStatAdapter = ArrayAdapter.createFromResource(
-	            this, R.array.stats, android.R.layout.simple_spinner_item);
-		spinnerStatAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+	            this, R.array.stats, R.layout.bbs_spinner_layout);
+		spinnerStatAdapter.setDropDownViewResource(R.layout.bbs_spinner_dropdown_item);
 	    
 		spinnerStat.setAdapter(spinnerStatAdapter);
 		// setSelection MUST be called after setAdapter
 		spinnerStat.setSelection(m_iStat);
 		spinnerStat.setOnItemSelectedListener(this);
+		
+		TextView tvSince = (TextView) findViewById(R.id.TextViewSince);
+
+        long sinceMs = SystemClock.elapsedRealtime();
+
+        if (sinceMs != -1)
+        {
+	        String sinceText = DateUtils.formatDuration(sinceMs);
+	        
+	        tvSince.setText(sinceText);
+	    	Log.i(TAG, "Since " + sinceText);
+        }
+        else
+        {
+	        tvSince.setText("n/a ");
+	    	Log.i(TAG, "Since: n/a ");
+        	
+        }
 
 	}
 	
@@ -144,7 +164,10 @@ public class RawStatsActivity extends ListActivity implements AdapterView.OnItem
 	{
 		BatteryStatsProxy.getInstance(this).invalidate();
 		new LoadStatData().execute(this);
-    	m_listViewAdapter.notifyDataSetChanged();
+		if (m_listViewAdapter != null)
+		{
+			m_listViewAdapter.notifyDataSetChanged();
+		}
 	}
 	
 	/**
@@ -171,25 +194,11 @@ public class RawStatsActivity extends ListActivity implements AdapterView.OnItem
 			{
 				return;
 			}
-
-			// inform the user when he tries to use functions requiring root and he doesn't have root enabled
-			boolean rootEnabled = sharedPrefs.getBoolean("root_features", false);
-			
-			if (!rootEnabled)
-			{
-				if ((m_iStat == 4) || (m_iStat == 3)) 
-				{
-					Toast.makeText(this,
-							"This function requires root access. Check \"Advanced\" preferences",
-							Toast.LENGTH_LONG).show();
-				}
-			}
-
 		}
 		else
 		{
     		Log.e(TAG, "RawStatsActivity.onItemSelected error. ID could not be resolved");
-    		Toast.makeText(this, "Error: could not resolve what changed", Toast.LENGTH_SHORT).show();
+    		Toast.makeText(this, getString(R.string.info_unknown_state), Toast.LENGTH_SHORT).show();
 
 		}
 
@@ -227,7 +236,7 @@ public class RawStatsActivity extends ListActivity implements AdapterView.OnItem
 						stats = provider.getCurrentOtherUsageStatList(true, false, false);
 						break;
 					case 1:
-						stats = provider.getCurrentNativeKernelWakelockStatList(false, 0, 0);
+						stats = provider.getCurrentKernelWakelockStatList(false, 0, 0);
 						break;
 					case 2:
 						stats = provider.getCurrentWakelockStatList(false, 0, 0);
@@ -236,7 +245,7 @@ public class RawStatsActivity extends ListActivity implements AdapterView.OnItem
 						stats = provider.getCurrentAlarmsStatList(false);
 						break;
 					case 4:
-						stats = provider.getCurrentNativeNetworkUsageStatList(false);
+						stats = provider.getCurrentNetworkUsageStatList(false);
 						break;
 					case 5:
 						stats = provider.getCurrentCpuStateList(false);
@@ -245,7 +254,7 @@ public class RawStatsActivity extends ListActivity implements AdapterView.OnItem
 						stats = provider.getCurrentProcessStatList(false, 0);
 						break;
 				}
-				m_listViewAdapter = new StatsAdapter(RawStatsActivity.this, stats);
+				m_listViewAdapter = new StatsAdapter(RawStatsActivity.this, stats, RawStatsActivity.this);
 			}
 			catch (BatteryInfoUnavailableException e)
 			{
@@ -293,20 +302,31 @@ public class RawStatsActivity extends ListActivity implements AdapterView.OnItem
 	    	{
 	    		if (m_exception instanceof BatteryInfoUnavailableException)
 	    		{
-	    			Toast.makeText(RawStatsActivity.this,
-	    					"BatteryInfo Service could not be contacted.",
-	    					Toast.LENGTH_LONG).show();
+	    			Snackbar
+					  .make(findViewById(android.R.id.content), R.string.info_service_connection_error, Snackbar.LENGTH_LONG)
+					  .show();
+//	    			Toast.makeText(RawStatsActivity.this,
+//	    					getString(R.string.info_service_connection_error),
+//	    					Toast.LENGTH_LONG).show();
 
 	    		}
 	    		else
 	    		{
-	    			Toast.makeText(RawStatsActivity.this,
-	    					"An unknown error occured while retrieving stats.",
-	    					Toast.LENGTH_LONG).show();
+	    			Snackbar
+					  .make(findViewById(android.R.id.content), R.string.info_unknown_stat_error, Snackbar.LENGTH_LONG)
+					  .show();
+//
+//	    			Toast.makeText(RawStatsActivity.this,
+//	    					getString(R.string.info_unknown_stat_error),
+//	    					Toast.LENGTH_LONG).show();
 	    			
 	    		}
 	    	}
-
+        	if (o != null)
+        	{
+        		o.setTotalTime(SystemClock.elapsedRealtime());
+        		
+        	}
 	    	RawStatsActivity.this.setListAdapter(o);
 	    }
 //	    @Override
@@ -319,7 +339,7 @@ public class RawStatsActivity extends ListActivity implements AdapterView.OnItem
 	    		try
 	    		{
 			    	m_progressDialog = new ProgressDialog(RawStatsActivity.this);
-			    	m_progressDialog.setMessage("Computing...");
+			    	m_progressDialog.setMessage(getString(R.string.message_computing));
 			    	m_progressDialog.setIndeterminate(true);
 			    	m_progressDialog.setCancelable(false);
 			    	m_progressDialog.show();

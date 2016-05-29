@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2013 asksven
+ * Copyright (C) 2011-2014 asksven
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,9 @@ package com.asksven.betterbatterystats.data;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
-import java.io.IOException;
 import java.io.Serializable;
 import java.io.StringWriter;
 import java.io.Writer;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -38,12 +36,11 @@ import android.preference.PreferenceManager;
 import android.util.Log;
 import android.widget.Toast;
 
-//import com.asksven.andoid.common.contrib.Shell;
-//import com.asksven.andoid.common.contrib.Shell.SU;
 import com.asksven.android.common.RootShell;
-import com.asksven.android.common.kernelutils.NativeKernelWakelock;
+import com.asksven.android.common.privateapiproxies.NativeKernelWakelock;
 import com.asksven.android.common.kernelutils.State;
 import com.asksven.android.common.kernelutils.Wakelocks;
+import com.asksven.android.common.nameutils.UidNameResolver;
 import com.asksven.android.common.privateapiproxies.Alarm;
 import com.asksven.android.common.privateapiproxies.Misc;
 import com.asksven.android.common.privateapiproxies.NetworkUsage;
@@ -52,6 +49,8 @@ import com.asksven.android.common.privateapiproxies.Wakelock;
 import com.asksven.android.common.privateapiproxies.Process;
 import com.asksven.android.common.utils.DataStorage;
 import com.asksven.android.common.utils.DateUtils;
+import com.asksven.android.common.utils.SysUtils;
+import com.asksven.betterbatterystats.R;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
@@ -69,6 +68,7 @@ public class Reading implements Serializable
 	String creationDate;
 	String statType;
 	String duration;
+	long totalTime;
 	String buildVersionRelease;
 	String buildBrand;
 	String buildDevice;
@@ -83,7 +83,10 @@ public class Reading implements Serializable
 	String buildUser;
 	String buildProduct;
 	String buildRadio;
-	boolean rooted;
+	boolean rootPermissions;
+	boolean batteryStatsPermGranted;
+	boolean xposedBatteryStatsEnabled;
+	String seLinuxPolicy;
 	int batteryLevelLost;
 	int batteryVoltageLost;
 	String batteryLevelLostText;
@@ -109,6 +112,12 @@ public class Reading implements Serializable
 		cpuStateStats 			= new ArrayList<StatElement>();
 		processStats 			= new ArrayList<StatElement>();
 
+		if ((refFrom == null) || (refTo == null))
+		{
+			Log.e(TAG, "Error: a Reading was instanciated with a null refFrom or refTo");
+			return;
+		}
+		
 		try
 		{
 			PackageInfo pinfo = context.getPackageManager()
@@ -123,7 +132,8 @@ public class Reading implements Serializable
 				
 		creationDate 		= DateUtils.now();
 		statType 			= refFrom.getLabel() + " to "+ refTo.getLabel();
-		duration 			= DateUtils.formatDuration(StatsProvider.getInstance(context).getSince(refFrom, refTo));
+		totalTime			= StatsProvider.getInstance(context).getSince(refFrom, refTo);
+		duration 			= DateUtils.formatDuration(totalTime);
 		buildVersionRelease = Build.VERSION.RELEASE;
 		buildBrand 			= Build.BRAND;
 		buildDevice 		= Build.DEVICE;
@@ -153,17 +163,23 @@ public class Reading implements Serializable
 			buildRadio 		= Build.RADIO;
 		}
 
-		rooted 				= RootShell.getInstance().rooted(); //Shell.SU.available();
+		SharedPreferences sharedPrefs 	= PreferenceManager.getDefaultSharedPreferences(context);
+		
+		rootPermissions = RootShell.getInstance().hasRootPermissions(); //Shell.SU.available();
+		
+		batteryStatsPermGranted = SysUtils.hasBatteryStatsPermission(context);
+		xposedBatteryStatsEnabled = sharedPrefs.getBoolean("ignore_system_app", false);
+		seLinuxPolicy = SysUtils.getSELinuxPolicy();
 		
 		batteryLevelLost 		= StatsProvider.getInstance(context).getBatteryLevelStat(refFrom, refTo);
 		batteryVoltageLost 		= StatsProvider.getInstance(context).getBatteryVoltageStat(refFrom, refTo);
-		batteryLevelLostText 	= StatsProvider.getInstance(context).getBatteryLevelFromTo(refFrom, refTo);
+		batteryLevelLostText 	= StatsProvider.getInstance(context).getBatteryLevelFromTo(refFrom, refTo, false);
 		batteryVoltageLostText 	= StatsProvider.getInstance(context).getBatteryVoltageFromTo(refFrom, refTo);
 
 		// populate the stats
-		SharedPreferences sharedPrefs 	= PreferenceManager.getDefaultSharedPreferences(context);
+		
 		boolean bFilterStats 			= sharedPrefs.getBoolean("filter_data", true);
-		int iPctType 					= Integer.valueOf(sharedPrefs.getString("default_wl_ref", "0"));
+		int iPctType 					= 0;
 		int iSort 						= 0;
 		
 		try
@@ -172,7 +188,7 @@ public class Reading implements Serializable
 			for (int i = 0; i < tempStats.size(); i++)
 			{
 				// make sure to load all data (even the lazy loaded one)
-				tempStats.get(i).getFqn(context);
+				tempStats.get(i).getFqn(UidNameResolver.getInstance(context));
 				
 				if (tempStats.get(i) instanceof Misc)
 				{
@@ -188,7 +204,7 @@ public class Reading implements Serializable
 			for (int i = 0; i < tempStats.size(); i++)
 			{
 				// make sure to load all data (even the lazy loaded one)
-				tempStats.get(i).getFqn(context);
+				tempStats.get(i).getFqn(UidNameResolver.getInstance(context));
 
 				if (tempStats.get(i) instanceof Wakelock)
 				{
@@ -200,11 +216,11 @@ public class Reading implements Serializable
 				}
 			}
 
-			tempStats = StatsProvider.getInstance(context).getNativeKernelWakelockStatList(bFilterStats, refFrom, iPctType, iSort, refTo);
+			tempStats = StatsProvider.getInstance(context).getKernelWakelockStatList(bFilterStats, refFrom, iPctType, iSort, refTo);
 			for (int i = 0; i < tempStats.size(); i++)
 			{
 				// make sure to load all data (even the lazy loaded one)
-				tempStats.get(i).getFqn(context);
+				tempStats.get(i).getFqn(UidNameResolver.getInstance(context));
 
 				if (tempStats.get(i) instanceof NativeKernelWakelock)
 				{
@@ -220,7 +236,7 @@ public class Reading implements Serializable
 			for (int i = 0; i < tempStats.size(); i++)
 			{
 				// make sure to load all data (even the lazy loaded one)
-				tempStats.get(i).getFqn(context);
+				tempStats.get(i).getFqn(UidNameResolver.getInstance(context));
 
 				if (tempStats.get(i) instanceof Process)
 				{
@@ -236,7 +252,7 @@ public class Reading implements Serializable
 			for (int i = 0; i < tempStats.size(); i++)
 			{
 				// make sure to load all data (even the lazy loaded one)
-				tempStats.get(i).getFqn(context);
+				tempStats.get(i).getFqn(UidNameResolver.getInstance(context));
 
 				if (tempStats.get(i) instanceof Alarm)
 				{
@@ -248,11 +264,11 @@ public class Reading implements Serializable
 				}
 			}
 			
-			tempStats = StatsProvider.getInstance(context).getNativeNetworkUsageStatList(bFilterStats, refFrom, refTo);
+			tempStats = StatsProvider.getInstance(context).getNetworkUsageStatList(bFilterStats, refFrom, refTo);
 			for (int i = 0; i < tempStats.size(); i++)
 			{
 				// make sure to load all data (even the lazy loaded one)
-				tempStats.get(i).getFqn(context);
+				tempStats.get(i).getFqn(UidNameResolver.getInstance(context));
 
 				if (tempStats.get(i) instanceof NetworkUsage)
 				{
@@ -268,7 +284,7 @@ public class Reading implements Serializable
 			for (int i = 0; i < tempStats.size(); i++)
 			{
 				// make sure to load all data (even the lazy loaded one)
-				tempStats.get(i).getFqn(context);
+				tempStats.get(i).getFqn(UidNameResolver.getInstance(context));
 
 				if (tempStats.get(i) instanceof State)
 				{
@@ -328,7 +344,11 @@ public class Reading implements Serializable
 		out.write("USER: " + buildUser + "\n");
 		out.write("PRODUCT: " + buildProduct + "\n");
 		out.write("RADIO: " + buildRadio + "\n");
-		out.write("Rooted: " + rooted + "\n");
+		out.write("Root perms: " + rootPermissions + "\n");
+		out.write("SELinux Policy: " + seLinuxPolicy + "\n");
+		out.write("BATTERY_STATS permission granted: " + batteryStatsPermGranted + "\n");
+		out.write("XPosed BATTERY_STATS module enabled: " + xposedBatteryStatsEnabled + "\n");
+		
 
 		out.write("============\n");
 		out.write("Battery Info\n");
@@ -337,116 +357,96 @@ public class Reading implements Serializable
 		out.write("Voltage lost [mV]: " + batteryVoltageLostText + "\n");
 
 		// write timing info
-		boolean bDumpChapter = sharedPrefs.getBoolean("show_other",
-				true);
-		if (bDumpChapter)
+		out.write("===========\n");
+		out.write("Other Usage\n");
+		out.write("===========\n");
+		dumpList(context, otherStats, out);
+
+		// write wakelock info
+		out.write("======================================================\n");
+		out.write("Wakelocks (requires root / system app on Android 4.4+)\n");
+		out.write("======================================================\n");
+		dumpList(context, partialWakelockStats, out);
+
+		String addendumKwl = "";
+		if (Wakelocks.isDiscreteKwlPatch())
 		{
-			out.write("===========\n");
-			out.write("Other Usage\n");
-			out.write("===========\n");
-			dumpList(context, otherStats, out);
+			addendumKwl = "!!! Discrete !!!";
+		}
+		if (!Wakelocks.fileExists())
+		{
+			addendumKwl = " !!! wakeup_sources !!!";
 		}
 
-		bDumpChapter = sharedPrefs.getBoolean("show_pwl", true);
-		if (bDumpChapter)
+		boolean alarmsUseAPI = sharedPrefs.getBoolean("force_alarms_api", false);
+		boolean kwlsUseAPI = sharedPrefs.getBoolean("force_kwl_api", false);
+
+		String addendumAlarms = "";
+		if (alarmsUseAPI)
 		{
-			// write wakelock info
-			out.write("=========\n");
-			out.write("Wakelocks\n");
-			out.write("=========\n");
-			dumpList(context, partialWakelockStats, out);
-			
+			addendumAlarms = "(uses API)";
+		}
+		if (kwlsUseAPI)
+		{
+			addendumKwl += "(uses API)";
 		}
 
-		bDumpChapter = sharedPrefs.getBoolean("show_kwl", true);
-		if (bDumpChapter)
+		// write kernel wakelock info
+		out.write("================\n");
+		out.write("Kernel Wakelocks " + addendumKwl + "\n");
+		out.write("================\n");
+
+		dumpList(context, kernelWakelockStats, out);
+
+		// write process info
+		out.write("======================================================\n");
+		out.write("Processes (requires root / system app on Android 4.4+)\n");
+		out.write("======================================================\n");
+		dumpList(context, processStats, out);
+
+		// write alarms info
+		out.write("======================\n");
+		out.write("Alarms (requires BATTERY_STATS permissions)" + addendumAlarms + "\n");
+		out.write("======================\n");
+		dumpList(context, alarmStats, out);
+
+		// write alarms info
+		out.write("======================\n");
+		out.write("Network (requires root)\n");
+		out.write("======================\n");
+		dumpList(context, networkStats, out);
+
+		// write alarms info
+		out.write("==========\n");
+		out.write("CPU States\n");
+		out.write("==========\n");
+		dumpList(context, cpuStateStats, out);
+	
+		out.write("========\n");
+		out.write("Services\n");
+		out.write("========\n");
+		out.write("Active since: The time when the service was first made active, either by someone starting or binding to it.\n");
+		out.write("Last activity: The time when there was last activity in the service (either explicit requests to start it or clients binding to it)\n");
+		out.write("See http://developer.android.com/reference/android/app/ActivityManager.RunningServiceInfo.html\n");
+		
+		ActivityManager am = (ActivityManager) context
+				.getSystemService(context.ACTIVITY_SERVICE);
+		List<ActivityManager.RunningServiceInfo> rs = am
+				.getRunningServices(50);
+
+		for (int i = 0; i < rs.size(); i++)
 		{
-			String addendum = "";
-			if (Wakelocks.isDiscreteKwlPatch())
-			{
-				addendum = "!!! Discrete !!!";
-			}
-			if (!Wakelocks.fileExists())
-			{
-				addendum = " !!! wakeup_sources !!!";
-			}
-
-			// write kernel wakelock info
-			out.write("================\n");
-			out.write("Kernel Wakelocks " + addendum + "\n");
-			out.write("================\n");
-
-			dumpList(context, kernelWakelockStats, out);
-		}
-
-		bDumpChapter = sharedPrefs.getBoolean("show_proc", false);
-		if (bDumpChapter)
-		{
-			// write process info
-			out.write("=========\n");
-			out.write("Processes\n");
-			out.write("=========\n");
-			dumpList(context, processStats, out);
-		}
-
-		bDumpChapter = sharedPrefs.getBoolean("show_alarm", true);
-		if (bDumpChapter)
-		{
-			// write alarms info
-			out.write("======================\n");
-			out.write("Alarms (requires root)\n");
-			out.write("======================\n");
-			dumpList(context, alarmStats, out);
-		}
-
-		bDumpChapter = sharedPrefs.getBoolean("show_network", true);
-		if (bDumpChapter)
-		{
-			// write alarms info
-			out.write("======================\n");
-			out.write("Network (requires root)\n");
-			out.write("======================\n");
-			dumpList(context, networkStats, out);
-		}
-
-		bDumpChapter = sharedPrefs.getBoolean("show_cpustates", true);
-		if (bDumpChapter)
-		{
-			// write alarms info
-			out.write("==========\n");
-			out.write("CPU States\n");
-			out.write("==========\n");
-			dumpList(context, cpuStateStats, out);
-		}
-
-		bDumpChapter = sharedPrefs.getBoolean("show_serv", false);
-		if (bDumpChapter)
-		{
-			out.write("========\n");
-			out.write("Services\n");
-			out.write("========\n");
-			out.write("Active since: The time when the service was first made active, either by someone starting or binding to it.\n");
-			out.write("Last activity: The time when there was last activity in the service (either explicit requests to start it or clients binding to it)\n");
-			out.write("See http://developer.android.com/reference/android/app/ActivityManager.RunningServiceInfo.html\n");
-			ActivityManager am = (ActivityManager) context
-					.getSystemService(context.ACTIVITY_SERVICE);
-			List<ActivityManager.RunningServiceInfo> rs = am
-					.getRunningServices(50);
-
-			for (int i = 0; i < rs.size(); i++)
-			{
-				ActivityManager.RunningServiceInfo rsi = rs.get(i);
-				out.write(rsi.process + " ("
-						+ rsi.service.getClassName() + ")\n");
-				out.write("  Active since: "
-						+ DateUtils.formatDuration(rsi.activeSince)
-						+ "\n");
-				out.write("  Last activity: "
-						+ DateUtils
-								.formatDuration(rsi.lastActivityTime)
-						+ "\n");
-				out.write("  Crash count:" + rsi.crashCount + "\n");
-			}
+			ActivityManager.RunningServiceInfo rsi = rs.get(i);
+			out.write(rsi.process + " ("
+					+ rsi.service.getClassName() + ")\n");
+			out.write("  Active since: "
+					+ DateUtils.formatDuration(rsi.activeSince)
+					+ "\n");
+			out.write("  Last activity: "
+					+ DateUtils
+							.formatDuration(rsi.lastActivityTime)
+					+ "\n");
+			out.write("  Crash count:" + rsi.crashCount + "\n");
 		}
 
 		// add chapter for reference info
@@ -476,7 +476,7 @@ public class Reading implements Serializable
 		if (!DataStorage.isExternalStorageWritable())
 		{
 			Log.e(TAG, "External storage can not be written");
-			Toast.makeText(context, "External Storage can not be written",
+			Toast.makeText(context, context.getString(R.string.message_external_storage_write_error),
 					Toast.LENGTH_SHORT).show();
 		}
 		try
@@ -498,7 +498,8 @@ public class Reading implements Serializable
 			}
 			else
 			{
-				root = Environment.getExternalStorageDirectory();
+				root = new File(sharedPrefs.getString("storage_path", 
+						Environment.getExternalStorageDirectory().getAbsolutePath()));
 			}
 
 			// check if file can be written
@@ -512,6 +513,10 @@ public class Reading implements Serializable
 				BufferedWriter out = new BufferedWriter(fw);
 				out.write(this.toJson());
 				out.close();
+				
+				// workaround: force mediascanner to run
+				DataStorage.forceMediaScanner(context, fileUri);
+
 			}
 		}
 		catch (Exception e)
@@ -533,7 +538,7 @@ public class Reading implements Serializable
 		if (!DataStorage.isExternalStorageWritable())
 		{
 			Log.e(TAG, "External storage can not be written");
-			Toast.makeText(context, "External Storage can not be written",
+			Toast.makeText(context, context.getString(R.string.message_external_storage_write_error),
 					Toast.LENGTH_SHORT).show();
 		}
 		try
@@ -555,7 +560,8 @@ public class Reading implements Serializable
 			}
 			else
 			{
-				root = Environment.getExternalStorageDirectory();
+				root = new File(sharedPrefs.getString("storage_path", 
+						Environment.getExternalStorageDirectory().getAbsolutePath()));
 			}
 
 			// check if file can be written
@@ -569,6 +575,10 @@ public class Reading implements Serializable
 				BufferedWriter out = new BufferedWriter(fw);
 				out.write(this.toStringText(context));
 				out.close();
+				
+				// workaround: force mediascanner to run
+				DataStorage.forceMediaScanner(context, fileUri);
+
 			}
 		}
 		catch (Exception e)
@@ -599,7 +609,7 @@ public class Reading implements Serializable
 			{
 				for (int i = 0; i < myList.size(); i++)
 				{
-					out.write(myList.get(i).getDumpData(context) + "\n");
+					out.write(myList.get(i).getDumpData(UidNameResolver.getInstance(context), totalTime) + "\n");
 		
 				}
 			}

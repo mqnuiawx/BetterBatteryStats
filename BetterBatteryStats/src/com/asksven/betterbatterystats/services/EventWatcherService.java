@@ -22,12 +22,9 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.SharedPreferences;
 import android.os.Binder;
 import android.os.IBinder;
-import android.preference.PreferenceManager;
 import android.util.Log;
-import com.asksven.betterbatterystats.R;
 import com.asksven.betterbatterystats.handlers.ScreenEventHandler;
 
 /**
@@ -94,6 +91,8 @@ public class EventWatcherService extends Service
     
 	public static boolean isServiceRunning(Context context)
 	{
+		if (context == null) return false;
+		
 	    ActivityManager manager = (ActivityManager) context.getSystemService(ACTIVITY_SERVICE);
 	    for (RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE))
 	    {

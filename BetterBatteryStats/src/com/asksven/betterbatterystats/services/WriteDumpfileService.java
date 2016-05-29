@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-12 asksven
+ * Copyright (C) 2011-14 asksven
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,46 +15,17 @@
  */
 package com.asksven.betterbatterystats.services;
 
-import java.util.ArrayList;
-import java.util.Random;
-
-import org.achartengine.chart.TimeChart;
-import org.achartengine.renderer.XYMultipleSeriesRenderer;
-import org.achartengine.renderer.XYSeriesRenderer;
-
-import com.asksven.android.common.privateapiproxies.BatteryStatsProxy;
-import com.asksven.android.common.privateapiproxies.Misc;
-import com.asksven.android.common.privateapiproxies.StatElement;
 import com.asksven.android.common.utils.DateUtils;
-import com.asksven.android.common.utils.GenericLogger;
-import com.asksven.android.common.utils.StringUtils;
 import com.asksven.betterbatterystats.data.Reading;
 import com.asksven.betterbatterystats.data.Reference;
 import com.asksven.betterbatterystats.data.ReferenceStore;
 import com.asksven.betterbatterystats.data.StatsProvider;
-import com.asksven.betterbatterystats.widgets.WidgetBars;
-import com.asksven.betterbatterystats.R;
-import com.asksven.betterbatterystats.StatsActivity;
 import com.asksven.betterbatterystats.Wakelock;
 
 import android.app.IntentService;
-import android.app.PendingIntent;
-import android.app.Service;
-import android.appwidget.AppWidgetManager;
-import android.content.ComponentName;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.os.IBinder;
-import android.preference.PreferenceManager;
-import android.text.method.TimeKeyListener;
 import android.util.Log;
-import android.view.View;
-import android.widget.LinearLayout;
-import android.widget.RemoteViews;
 
 /**
  * @author sven
@@ -65,6 +36,7 @@ public class WriteDumpfileService extends IntentService
 	private static final String TAG = "WriteDumpfileService";
 	public static final String STAT_TYPE_FROM = "StatTypeFrom";
 	public static final String STAT_TYPE_TO = "StatTypeTo";
+	public static final String OUTPUT = "Output";
 
 	public WriteDumpfileService()
 	{
@@ -79,9 +51,16 @@ public class WriteDumpfileService extends IntentService
 		
 		String refFrom = intent.getStringExtra(WriteDumpfileService.STAT_TYPE_FROM);
 		String refTo = intent.getStringExtra(WriteDumpfileService.STAT_TYPE_TO);
+		String output = intent.getStringExtra(WriteDumpfileService.OUTPUT);
 		if (refTo == null)
 		{
 			refTo = Reference.CURRENT_REF_FILENAME;
+		}
+		
+		// if we want a reading until "current" make sure to update that ref
+		if (refTo == Reference.CURRENT_REF_FILENAME)
+		{
+			StatsProvider.getInstance(this).setCurrentReference(0);
 		}
 		
 		
@@ -96,7 +75,14 @@ public class WriteDumpfileService extends IntentService
 	        	Reference myReferenceFrom 	= ReferenceStore.getReferenceByName(refFrom, this);
 	    		Reference myReferenceTo	 	= ReferenceStore.getReferenceByName(refTo, this);
 	    		Reading data = new Reading(this,myReferenceFrom, myReferenceTo);
-	    		data.writeToFileText(this);
+	    		if ((output == null) || (!output.equals("JSON")))
+	    		{
+	    			data.writeToFileText(this);
+	    		}
+	    		else
+	    		{
+	    			data.writeToFileJson(this);
+	    		}
 	
 			}
 			catch (Exception e)

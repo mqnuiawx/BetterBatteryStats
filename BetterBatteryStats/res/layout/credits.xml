@@ -3,14 +3,18 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="fill_parent"
     android:layout_height="fill_parent"
+    android:background="#e5e5e5"
     android:orientation="vertical" >
 
+    <include layout="@layout/toolbar_icon"/>
 
     <ListView
         android:id="@android:id/list"
         android:layout_width="fill_parent"
-        android:layout_height="fill_parent"
-        android:padding="8dp"
-        android:dividerHeight="8dp"/>
+        android:layout_height="0dip"
+        android:layout_weight="1"
+        android:background="?android:attr/colorBackground"
+        android:divider="@null"
+        android:dividerHeight="@dimen/activity_horizontal_margin" />
 
 </LinearLayout>

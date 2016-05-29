@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2012 asksven
+ * Copyright (C) 2011-2014 asksven
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,45 +19,41 @@ import java.util.ArrayList;
 import java.util.List;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.app.Dialog;
-import android.app.ListActivity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.drawable.ColorDrawable;
-import android.net.Uri;
-import android.os.AsyncTask;
-import android.os.Build;
 import android.preference.PreferenceManager;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.app.ActivityOptionsCompat;
 import android.util.Log;
+import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.View.OnLongClickListener;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.BaseAdapter;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.provider.Settings;
 
-import com.asksven.android.common.kernelutils.NativeKernelWakelock;
+import com.asksven.android.common.privateapiproxies.NativeKernelWakelock;
 import com.asksven.android.common.kernelutils.State;
+import com.asksven.android.common.nameutils.UidNameResolver;
 import com.asksven.android.common.privateapiproxies.Alarm;
-import com.asksven.android.common.privateapiproxies.Alarm.AlarmItem;
+import com.asksven.android.common.privateapiproxies.AlarmItem;
 import com.asksven.android.common.privateapiproxies.Misc;
 import com.asksven.android.common.privateapiproxies.NetworkUsage;
 import com.asksven.android.common.privateapiproxies.Process;
 import com.asksven.android.common.privateapiproxies.StatElement;
-import com.asksven.betterbatterystats.data.GoogleAnalytics;
-import com.asksven.betterbatterystats.data.KbData;
-import com.asksven.betterbatterystats.data.KbEntry;
-import com.asksven.betterbatterystats.data.KbReader;
 import com.asksven.betterbatterystats.widgets.GraphableBars;
-import com.asksven.betterbatterystats.HelpActivity;
-import com.asksven.betterbatterystats.PackageInfoTabsPager;
+import com.asksven.betterbatterystats.widgets.GraphablePie;
+import com.asksven.betterbatterystats.LogSettings;
+import com.asksven.betterbatterystats.PackageInfoActivity;
 import com.asksven.betterbatterystats.R;
 
 public class StatsAdapter extends BaseAdapter
@@ -66,26 +62,59 @@ public class StatsAdapter extends BaseAdapter
 
     private List<StatElement> m_listData;
     private static final String TAG = "StatsAdapter";
+    public static final String TRANSITION_NAME = "icon_transition";
 
     private double m_maxValue = 0;
+    private long m_timeSince = 0; 
+    private Activity m_parent = null;
     
-    public StatsAdapter(Context context, List<StatElement> listData)
+    public StatsAdapter(Context context, List<StatElement> listData, Activity parent)
     {
         this.m_context = context;
         this.m_listData = listData;
+        this.m_parent = parent;
 
         SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this.m_context);
         boolean bKbEnabled = sharedPrefs.getBoolean("enable_kb", true);
         
-        if (m_listData != null)
+        if ((m_listData != null) && (!m_listData.isEmpty()))
         {
-	        for (int i = 0; i < m_listData.size(); i++)
-	        {
-	        	StatElement g = m_listData.get(i);
-	        	double[] values = g.getValues();
-	        	m_maxValue = Math.max(m_maxValue, values[values.length - 1]);
-	            m_maxValue = Math.max(m_maxValue, g.getMaxValue());
-	        }
+        	if (m_listData.get(0) instanceof NetworkUsage)
+        	{
+		        for (int i = 0; i < m_listData.size(); i++)
+		        {
+		        	StatElement g = m_listData.get(i);
+		        	
+	        		double[] values = g.getValues();
+		        	m_maxValue = Math.max(m_maxValue, values[values.length - 1]);
+		            m_maxValue = Math.max(m_maxValue, g.getMaxValue());
+		        }
+        	}
+        	else if (m_listData.get(0) instanceof Alarm)
+        	{
+		        for (int i = 0; i < m_listData.size(); i++)
+		        {
+		        	StatElement g = m_listData.get(i);
+		        	
+	        		double[] values = g.getValues();
+		        	m_maxValue += values[0];
+		        	Log.i(TAG, "Summing up " + values[0] + ", may is now " + m_maxValue);
+		        }
+        	}
+        	else if (m_listData.get(0) instanceof Process)
+        	{
+	        	StatElement g = m_listData.get(0);
+	        	
+	        	m_maxValue = g.getTotal();
+	        	Log.i(TAG, "Total is " + m_maxValue);
+        	}
+
+        	else
+        	{
+        		m_maxValue = m_timeSince;
+        	}
+        	
+        	
         }
     }
 
@@ -106,6 +135,17 @@ public class StatsAdapter extends BaseAdapter
         return m_listData.get(position);
     }
 
+    public void setTotalTime(long sinceMs)
+    {
+    	m_timeSince = sinceMs;
+    	if ((m_listData == null) || (m_listData.isEmpty())) return;
+    	
+    	if (!((m_listData.get(0) instanceof Process) || (m_listData.get(0) instanceof NetworkUsage) || (m_listData.get(0) instanceof Alarm)))
+    	{
+    		m_maxValue = m_timeSince;
+    	}
+    }
+    
     public long getItemId(int position)
     {
         return position;
@@ -115,60 +155,123 @@ public class StatsAdapter extends BaseAdapter
     {
     	StatElement entry = m_listData.get(position);
     	
-    	Log.i(TAG, "Values: " +entry.getVals());
+    	SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this.m_context);
+        boolean bShowBars = sharedPrefs.getBoolean("show_gauge", false);
+        
+        if (LogSettings.DEBUG)
+        {
+        	Log.i(TAG, "Values: " +entry.getVals());
+        }
+        
         if (convertView == null)
         {
             LayoutInflater inflater = (LayoutInflater) m_context
                     .getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-            convertView = inflater.inflate(R.layout.stat_row, null);
-        }
-        TextView tvName = (TextView) convertView.findViewById(R.id.TextViewName);
-       	tvName.setText(entry.getName());
-
-       	KbData kb = KbReader.getInstance().read(m_context);
-       	KbEntry kbentry = null;
-        if (kb != null)
-        {
-        	 kbentry = kb.findByStatElement(entry.getName(), entry.getFqn(m_context));
+            
+            // depending on settings show new pie gauge or old bar gauge
+            if (!bShowBars)
+            {
+            	convertView = inflater.inflate(R.layout.stat_row, null);
+            }
+            else
+            {
+            	convertView = inflater.inflate(R.layout.stat_row_gauge, null);
+            }
         }
         
-        SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this.m_context);
+        final float scale = this.m_context.getResources().getDisplayMetrics().density;
+        
+        
+        TextView tvName = (TextView) convertView.findViewById(R.id.TextViewName);
+        
+        /////////////////////////////////////////
+		// we do some stuff here to handle settings about font size and thumbnail size
+		String fontSize = sharedPrefs.getString("medium_font_size", "16");
+		int mediumFontSize = Integer.parseInt(fontSize);
+
+		//we need to change "since" fontsize
+		tvName.setTextSize(TypedValue.COMPLEX_UNIT_SP, mediumFontSize);
+		
+		////////////////////////////////////////////////////////////////////////////////////
+       	tvName.setText(entry.getName());
+
+//       	KbData kb = KbReader.getInstance().read(m_context);
+//       	KbEntry kbentry = null;
+//        if (kb != null)
+//        {
+//        	 kbentry = kb.findByStatElement(entry.getName(), entry.getFqn(UidNameResolver.getInstance(m_context)));
+//        }
+        
         boolean bShowKb = sharedPrefs.getBoolean("enable_kb", true);
         ImageView iconKb = (ImageView) convertView.findViewById(R.id.imageKB);
-        if ( (bShowKb) && (kbentry != null))
+        
+        // for now we always hide the KB
+        iconKb.setVisibility(View.INVISIBLE);
+//        if ( (bShowKb) && (kbentry != null))
+//        {
+//        	iconKb.setVisibility(View.VISIBLE);
+//        }
+//        else
+//        {
+//        	iconKb.setVisibility(View.INVISIBLE);
+//        }
+        TextView tvFqn = (TextView) convertView.findViewById(R.id.TextViewFqn);
+        tvFqn.setText(entry.getFqn(UidNameResolver.getInstance(m_context)));
+
+        TextView tvData = (TextView) convertView.findViewById(R.id.TextViewData);
+
+        // for alarms the values is wakeups per hour so we need to take the time as reference for the text
+        if (entry instanceof Alarm)
         {
-        	iconKb.setVisibility(View.VISIBLE);
+        	tvData.setText(entry.getData((long)m_timeSince));
         }
         else
         {
-        	iconKb.setVisibility(View.INVISIBLE);
+        	tvData.setText(entry.getData((long)m_maxValue));
         }
-        TextView tvFqn = (TextView) convertView.findViewById(R.id.TextViewFqn);
-        tvFqn.setText(entry.getFqn(m_context));
-
-        TextView tvData = (TextView) convertView.findViewById(R.id.TextViewData);
-        tvData.setText(entry.getData());
         
-        LinearLayout myLayout = (LinearLayout) convertView.findViewById(R.id.LinearLayoutBar);
+        //LinearLayout myLayout = (LinearLayout) convertView.findViewById(R.id.LinearLayoutBar);
         LinearLayout myFqnLayout = (LinearLayout) convertView.findViewById(R.id.LinearLayoutFqn);
         LinearLayout myRow = (LinearLayout) convertView.findViewById(R.id.LinearLayoutEntry);
         
         // long press for "copy to clipboard"
-        //myRow.setOnLongClickListener(new OnItemLongClickListener(position));
+        convertView.setOnLongClickListener(new OnItemLongClickListener(position));
 
-        
-        GraphableBars buttonBar = (GraphableBars) convertView.findViewById(R.id.ButtonBar);
-        
-        ImageView iconView = (ImageView) convertView.findViewById(R.id.icon);
-        
-        if (sharedPrefs.getBoolean("hide_bars", false))
+        if (!bShowBars)
         {
-        	myLayout.setVisibility(View.GONE);
-        	
+	        GraphablePie gauge = (GraphablePie) convertView.findViewById(R.id.Gauge);
+	        
+	        /////////////////////////////////////////
+			// we do some stuff here to handle settings about font size and thumbnail size
+			String iconDim = sharedPrefs.getString("thumbnail_size", "56");
+			int iconSize = Integer.parseInt(iconDim);
+			int pixels = (int) (iconSize * scale + 0.5f);
+			//we need to change "since" fontsize
+			gauge.getLayoutParams().height = pixels;
+			gauge.getLayoutParams().width = pixels;
+			gauge.requestLayout();
+			
+			////////////////////////////////////////////////////////////////////////////////////
+	        if (entry instanceof NetworkUsage)
+	        {
+	        	gauge.setValue(entry.getValues()[0], ((NetworkUsage) entry).getTotal());
+	        	
+	        }
+	        else
+	        {
+	        	double max = m_maxValue;
+	        	// avoid rounding errors leading to values > 100 %
+	        	if (entry.getValues()[0] > max)
+	        	{
+	        		max = entry.getValues()[0];
+	        		Log.i(TAG, "Upping gauge max to " + max);
+	        	}
+	        	gauge.setValue(entry.getValues()[0], max);
+	        }
         }
         else
         {
-        	myLayout.setVisibility(View.VISIBLE);
+        	GraphableBars buttonBar = (GraphableBars) convertView.findViewById(R.id.ButtonBar);
         	int iHeight = 10;
         	try
     		{
@@ -187,16 +290,30 @@ public class StatsAdapter extends BaseAdapter
    			buttonBar.setName(entry.getName());
         	buttonBar.setValues(entry.getValues(), m_maxValue);        	
         }
-        
+        ImageView iconView = (ImageView) convertView.findViewById(R.id.icon);
+        LinearLayout iconLayout = (LinearLayout) convertView.findViewById(R.id.LayoutIcon);
+        /////////////////////////////////////////
+		// we do some stuff here to handle settings about font size and thumbnail size
+		String iconDim = sharedPrefs.getString("thumbnail_size", "56");
+		int iconSize = Integer.parseInt(iconDim);
+		int pixels = (int) (iconSize * scale + 0.5f);
+		//we need to change "since" fontsize
+		iconView.getLayoutParams().width = pixels;
+		iconView.getLayoutParams().height = pixels;
+		iconView.requestLayout();
+		//n 20;setLay.setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconSize);
+		
+		////////////////////////////////////////////////////////////////////////////////////
+                
         // add on click listener for the icon only if KB is enabled
-        if (bShowKb)
-        {
-	        // set a click listener for the list
-	        iconKb.setOnClickListener(new OnIconClickListener(position));
-        }
+//        if (bShowKb)
+//        {
+//	        // set a click listener for the list
+//	        iconKb.setOnClickListener(new OnIconClickListener(position));
+//        }
 
         // show / hide fqn text
-        if ((entry instanceof Process) || (entry instanceof Alarm) || (entry instanceof NativeKernelWakelock) || (entry instanceof State) || (entry instanceof Misc))
+        if ((entry instanceof Process) || (entry instanceof State) || (entry instanceof Misc))
         {
         	myFqnLayout.setVisibility(View.GONE);
         }
@@ -205,7 +322,7 @@ public class StatsAdapter extends BaseAdapter
         	myFqnLayout.setVisibility(View.VISIBLE);
         }
 
-        // show / hide package icons
+        // show / hide package icons (we show / hide the whole layout as it contains a margin that must be hidded as well
         if ((entry instanceof NativeKernelWakelock) || (entry instanceof State) || (entry instanceof Misc))
         {
 
@@ -215,7 +332,7 @@ public class StatsAdapter extends BaseAdapter
         else
         {
         	iconView.setVisibility(View.VISIBLE); 
-        	iconView.setImageDrawable(entry.getIcon(m_context));
+        	iconView.setImageDrawable(entry.getIcon(UidNameResolver.getInstance(m_context)));
 	        // set a click listener for the list
 	        iconView.setOnClickListener(new OnPackageClickListener(position));
 
@@ -234,56 +351,56 @@ public class StatsAdapter extends BaseAdapter
         return convertView;
     }
     
-    /**
-     * Handler for on click of the KB icon
-     * @author sven
-     *
-     */
-    private class OnIconClickListener implements OnClickListener
-    {           
-        private int m_iPosition;
-        OnIconClickListener(int position)
-        {
-                m_iPosition = position;
-        }
-        
-        @Override
-        public void onClick(View arg0)
-        {
-        	StatElement entry = (StatElement) getItem(m_iPosition);
-            KbData kb = KbReader.getInstance().read(m_context);
-        	// the timing may lead to m_kb not being initialized yet, it must be checked
-        	if (kb == null)
-        	{
-        		return;
-        	}
-        	KbEntry kbentry = kb.findByStatElement(entry.getName(), entry.getFqn(StatsAdapter.this.m_context));
-  	      	if (kbentry != null)
-  	      	{
-	  	      	SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(StatsAdapter.this.m_context);
-	  	      	
-	  	      	String url = kbentry.getUrl();
-	  	      	
-	  	        if (sharedPrefs.getBoolean("kb_ext_browser", true))
-	  	        {
-					
-					Intent intent = new Intent("android.intent.action.VIEW",
-							Uri.parse(url)); 
-					StatsAdapter.this.m_context.startActivity(intent);
-	  	        }
-	  	        else
-	  	        {
-		  	      	Intent intentKB = new Intent(StatsAdapter.this.m_context,
-		  	      			HelpActivity.class);
-		  	      	intentKB.putExtra("url", url);
-		  	        StatsAdapter.this.m_context.startActivity(intentKB);
-	  	        }           
-  	      	}
-        }
-    }
+//    /**
+//     * Handler for on click of the KB icon
+//     * @author sven
+//     *
+//     */
+//    private class OnIconClickListener implements OnClickListener
+//    {           
+//        private int m_iPosition;
+//        OnIconClickListener(int position)
+//        {
+//                m_iPosition = position;
+//        }
+//        
+//        @Override
+//        public void onClick(View arg0)
+//        {
+//        	StatElement entry = (StatElement) getItem(m_iPosition);
+//            KbData kb = KbReader.getInstance().read(m_context);
+//        	// the timing may lead to m_kb not being initialized yet, it must be checked
+//        	if (kb == null)
+//        	{
+//        		return;
+//        	}
+//        	KbEntry kbentry = kb.findByStatElement(entry.getName(), entry.getFqn(UidNameResolver.getInstance(StatsAdapter.this.m_context)));
+//  	      	if (kbentry != null)
+//  	      	{
+//	  	      	SharedPreferences sharedPrefs = PreferenceManager.getDefaultSharedPreferences(StatsAdapter.this.m_context);
+//	  	      	
+//	  	      	String url = kbentry.getUrl();
+//	  	      	
+//	  	        if (sharedPrefs.getBoolean("kb_ext_browser", true))
+//	  	        {
+//					
+//					Intent intent = new Intent("android.intent.action.VIEW",
+//							Uri.parse(url)); 
+//					StatsAdapter.this.m_context.startActivity(intent);
+//	  	        }
+//	  	        else
+//	  	        {
+//		  	      	Intent intentKB = new Intent(StatsAdapter.this.m_context,
+//		  	      			HelpActivity.class);
+//		  	      	intentKB.putExtra("url", url);
+//		  	        StatsAdapter.this.m_context.startActivity(intentKB);
+//	  	        }           
+//  	      	}
+//        }
+//    }
 
     /**
-     * Handler for on click of the KB icon
+     * Handler for on click of the icon
      * @author sven
      *
      */
@@ -301,14 +418,14 @@ public class StatsAdapter extends BaseAdapter
         	StatElement entry = (StatElement) getItem(m_iPosition);
         	
         	Context ctx = arg0.getContext();
-        	if (entry.getIcon(ctx) == null)
+        	if (entry.getIcon(UidNameResolver.getInstance(m_context)) == null)
         	{
         		return;
         	}
         	
 //        	ctx.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS));
         	String packageName = entry.getPackageName();
-        	showInstalledPackageDetails(ctx, packageName);
+        	showInstalledPackageDetails(ctx, packageName, arg0);
         	
         }
     }
@@ -326,7 +443,8 @@ public class StatsAdapter extends BaseAdapter
                 m_iPosition = position;
         }
         
-        @Override
+        @SuppressLint("NewApi")
+		@Override
         public void onClick(View arg0)
         {
         	
@@ -337,14 +455,14 @@ public class StatsAdapter extends BaseAdapter
 	        	Alarm alarmEntry = (Alarm) getItem(m_iPosition);
 	            
 	        	Dialog dialog = new Dialog(m_context);
-	
-	        	dialog.setContentView(R.layout.alarms_dialog);
-	        	dialog.setTitle(entry.getName());
-	
+	        	dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+	        	dialog.setContentView(R.layout.details_dialog);
+	        	
+	        	TextView dialogTitle = (TextView) dialog.findViewById(R.id.dialog_title);
+	        	dialogTitle.setText(entry.getName());
 	        	TextView title = (TextView) dialog.findViewById(R.id.title);
-//	        	TextView subtitle = (TextView) dialog.findViewById(R.id.subtitle);
 	        	TextView text = (TextView) dialog.findViewById(R.id.text);
-	        	title.setText(entry.getData());
+	        	title.setText(entry.getData((long)m_timeSince));
 	        	
 	        	String strText = "";
 	        	ArrayList<AlarmItem> myItems = alarmEntry.getItems();
@@ -360,20 +478,23 @@ public class StatsAdapter extends BaseAdapter
 	        	}
 	        	text.setText(strText);
 	        	dialog.show();
+	        	
 	        }
         	if (entry instanceof NativeKernelWakelock)
         	{
         		NativeKernelWakelock kernelWakelockEntry = (NativeKernelWakelock) getItem(m_iPosition);
                 
             	Dialog dialog = new Dialog(m_context);
-
-            	dialog.setContentView(R.layout.alarms_dialog);
+            	dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            	dialog.setContentView(R.layout.details_dialog);
             	dialog.setTitle(kernelWakelockEntry.getName());
 
+            	TextView dialogTitle = (TextView) dialog.findViewById(R.id.dialog_title);
+	        	dialogTitle.setText(kernelWakelockEntry.getName());
             	TextView title = (TextView) dialog.findViewById(R.id.title);
 //            	TextView subtitle = (TextView) dialog.findViewById(R.id.subtitle);
             	TextView text = (TextView) dialog.findViewById(R.id.text);
-            	title.setText(kernelWakelockEntry.getData());
+            	title.setText(kernelWakelockEntry.getData((long)m_maxValue));
             	
             	String strText = "";
             	strText += "Count: " + kernelWakelockEntry.getCount() + "\n";
@@ -419,18 +540,29 @@ public class StatsAdapter extends BaseAdapter
         	    android.content.ClipData clip = android.content.ClipData.newPlainText("Copied Text", entry.getName());
         	            clipboard.setPrimaryClip(clip);
         	}
-			Toast.makeText(m_context, entry.getName() + " was copied to the clipboard", Toast.LENGTH_LONG).show();
-        	
+        	try
+        	{
+        		Toast.makeText(m_context, m_context.getString(R.string.message_copied_to_clipboard, entry.getName()), Toast.LENGTH_LONG).show();
+        	}
+        	catch (Exception e)
+        	{
+        		// can normally not fail, if it still does it's only the toast
+        	}
         	return true;
         }
     }
 
-    public static void showInstalledPackageDetails(Context context, String packageName)
-    {
-    	Intent intentPerms = new Intent(context, PackageInfoTabsPager.class); //Activity.class);
+    public void showInstalledPackageDetails(Context context, String packageName, View view)
+    {       
+    	Intent intentPerms = new Intent(context, PackageInfoActivity.class);
     	intentPerms.putExtra("package", packageName);
-    	GoogleAnalytics.getInstance(context).trackPage(GoogleAnalytics.ACTIVITY_PERMS);
-        context.startActivity(intentPerms);
+        //context.startActivity(intentPerms);
+        View source_icon = view.findViewById(R.id.icon);
+        
+        ActivityOptionsCompat options = ActivityOptionsCompat.makeSceneTransitionAnimation(
+                m_parent, source_icon, TRANSITION_NAME);
+        ActivityCompat.startActivity(m_parent, intentPerms, options.toBundle());
+        
     }
 
     

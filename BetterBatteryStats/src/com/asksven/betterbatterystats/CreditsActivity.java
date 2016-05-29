@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2012 asksven
+ * Copyright (C) 2011-2015 asksven
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,22 +15,12 @@
  */
 package com.asksven.betterbatterystats;
 
-import android.app.Activity;
-import android.app.ListActivity;
-import android.content.Intent;
-import android.content.pm.PackageInfo;
-import android.net.Uri;
 import android.os.Bundle;
-import android.util.Log;
-import android.view.View;
-import android.widget.Button;
-import android.widget.ListView;
-import android.widget.TextView;
-
+import android.support.v7.widget.Toolbar;
 import com.asksven.betterbatterystats.R;
 import com.asksven.betterbatterystats.adapters.CreditsAdapter;
 
-public class CreditsActivity extends ListActivity
+public class CreditsActivity extends ActionBarListActivity
 {
 
     private static final String TAG = "CreditsActivity";
@@ -42,9 +32,17 @@ public class CreditsActivity extends ListActivity
     {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.credits);
+        
+		Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+		toolbar.setTitle(getString(R.string.label_credits));
+
+	    setSupportActionBar(toolbar);
+	    getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+	    getSupportActionBar().setDisplayUseLogoEnabled(false);
+	    
         CreditsAdapter adapter = new CreditsAdapter(this);
         setListAdapter(adapter);
-        setTitle("Credits");
+
         
 
     }   

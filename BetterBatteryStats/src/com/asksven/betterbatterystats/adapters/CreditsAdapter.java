@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2012 asksven
+ * Copyright (C) 2011-2014 asksven
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,25 +22,23 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
-import android.widget.ImageView;
 import android.widget.TextView;
 
 public class CreditsAdapter extends ArrayAdapter<String>
 {
 	private final Context m_context;
 	private final String[] m_libs = new String[]
-	{ "ActionBarSherlock", "libsuperuser", "Android Common", "Google gson", "AchartEngine", "AndroidPlot", "DashClock", "RootTools" };
+	{ "libsuperuser", "Android Common", "Google gson", "DashClock", "RootTools", "ckChangeLog" };
 	private final String[] m_authors = new String[]
-	{ "Jake Wharton", "Chainfire", "asksven", "", "AchartEngine", "AndroidPlot", "Roman Nurik", "Stericson" };
+	{ "Chainfire", "asksven", "", "Roman Nurik", "Stericson", "cketti" };
 	private final String[] m_licenses = new String[]
-	{ "Apache 2.0", "Apache 2.0", "Apache 2.0", "Apache 2.0", "Apache 2.0", "Apache 2.0", "Apache 2.0", "Apache 2.0" };
+	{ "Apache 2.0", "Apache 2.0", "Apache 2.0", "Apache 2.0", "Apache 2.0", "Apache 2.0" };
 	private final String[] m_urls = new String[]
-	{ "Apache 2.0", "Apache 2.0", "Apache 2.0",
+	{ "Apache 2.0", "Apache 2.0",
 			"https://code.google.com/p/google-gson/",
-			"http://www.achartengine.org/index.html",
-			"http://androidplot.com/",
 			"https://code.google.com/p/dashclock/",
-			"https://code.google.com/p/roottools/"};
+			"https://code.google.com/p/roottools/",
+			"https://github.com/cketti/ckChangeLog"};
 
 	public CreditsAdapter(Context context)
 	{

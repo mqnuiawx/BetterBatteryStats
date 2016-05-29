@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 asksven
+ * Copyright (C) 2012-2014 asksven
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,9 @@ import android.content.Context;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.FragmentManager;
+import android.support.v4.app.ListFragment;
 import android.util.Log;
 
-import com.actionbarsherlock.app.SherlockFragmentActivity;
-import com.actionbarsherlock.app.SherlockListFragment;
 import com.asksven.betterbatterystats.adapters.ServicesAdapter;
 import com.asksven.betterbatterystats.data.StatsProvider;
 import com.asksven.betterbatterystats.R;
@@ -32,7 +31,7 @@ import com.asksven.betterbatterystats.R;
  * Demonstration of the use of a CursorLoader to load and display contacts data
  * in a fragment.
  */
-public class ServicesFragmentActivity extends SherlockFragmentActivity
+public class ServicesFragmentActivity extends BaseActivity
 {
 	
 
@@ -51,7 +50,7 @@ public class ServicesFragmentActivity extends SherlockFragmentActivity
 		}
 	}
 
-	public static class ServicesListFragment extends SherlockListFragment
+	public static class ServicesListFragment extends ListFragment
 	{
 
 		/**
@@ -123,7 +122,7 @@ public class ServicesFragmentActivity extends SherlockFragmentActivity
 		    	if (m_progressDialog == null)
 		    	{
 			    	m_progressDialog = new ProgressDialog(getActivity());
-			    	m_progressDialog.setMessage("Computing...");
+			    	m_progressDialog.setMessage(getString(R.string.message_computing));
 			    	m_progressDialog.setIndeterminate(true);
 			    	m_progressDialog.setCancelable(false);
 			    	m_progressDialog.show();

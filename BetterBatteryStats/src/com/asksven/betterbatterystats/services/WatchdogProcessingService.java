@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-12 asksven
+ * Copyright (C) 2011-14 asksven
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,46 +16,29 @@
 package com.asksven.betterbatterystats.services;
 
 import java.util.ArrayList;
-import java.util.Random;
-
-import org.achartengine.chart.TimeChart;
-import org.achartengine.renderer.XYMultipleSeriesRenderer;
-import org.achartengine.renderer.XYSeriesRenderer;
 
 import com.asksven.android.common.privateapiproxies.BatteryStatsProxy;
 import com.asksven.android.common.privateapiproxies.Misc;
 import com.asksven.android.common.privateapiproxies.StatElement;
 import com.asksven.android.common.utils.DateUtils;
-import com.asksven.android.common.utils.GenericLogger;
-import com.asksven.android.common.utils.StringUtils;
 import com.asksven.betterbatterystats.data.Reference;
 import com.asksven.betterbatterystats.data.ReferenceStore;
 import com.asksven.betterbatterystats.data.StatsProvider;
 import com.asksven.betterbatterystats.widgetproviders.LargeWidgetProvider;
-import com.asksven.betterbatterystats.widgets.WidgetBars;
 import com.asksven.betterbatterystats.R;
 import com.asksven.betterbatterystats.StatsActivity;
 
 import android.app.IntentService;
-import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.app.Service;
-import android.appwidget.AppWidgetManager;
-import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.os.IBinder;
 import android.preference.PreferenceManager;
-import android.text.method.TimeKeyListener;
+import android.support.v7.app.NotificationCompat;
 import android.util.Log;
-import android.view.View;
-import android.widget.LinearLayout;
-import android.widget.RemoteViews;
 import android.widget.Toast;
 
 /**
@@ -79,10 +62,9 @@ public class WatchdogProcessingService extends IntentService
 
 		try
 		{
-			boolean bIssueWarnings = sharedPrefs.getBoolean("watchdog_issue_warnings", false);
-			if (bIssueWarnings)
+
+			if (true)
 			{
-				boolean bShowToast = sharedPrefs.getBoolean("watchdog_show_toasts", false);
 
 				int minScreenOffDurationMin 	= sharedPrefs.getInt("watchdog_duration_threshold", 10);
 				int awakeThresholdPct		= sharedPrefs.getInt("watchdog_awake_threshold", 30);
@@ -94,69 +76,88 @@ public class WatchdogProcessingService extends IntentService
 				// we process only if screenOffDuration is >= minScreenOffDuration
 				if (screenOffDurationMs >= ((long)minScreenOffDurationMin*60*1000))
 				{
-					if (bShowToast)
-					{
-						Toast.makeText(this, "BBS: Watchdog processing...", Toast.LENGTH_SHORT).show();
-					}
+
+					//Toast.makeText(this, getString(R.string.message_watchdog_processing), Toast.LENGTH_SHORT).show();
 
 					int awakePct = 0;
 					StatsProvider stats = StatsProvider.getInstance(this);
 					// make sure to flush cache
 					BatteryStatsProxy.getInstance(this).invalidate();
 
-					boolean saveScreenOnRef = sharedPrefs.getBoolean("ref_for_screen_on", false);
-					if (saveScreenOnRef)
-					{
-						// save screen on reference
-						Intent serviceIntent = new Intent(this.getApplicationContext(), WriteScreenOnReferenceService.class);
-						this.startService(serviceIntent);
-					}
+
+					// save screen on reference
+					Intent serviceIntent = new Intent(this.getApplicationContext(), WriteScreenOnReferenceService.class);
+					this.startService(serviceIntent);
 
 					if (stats.hasScreenOffRef())
 					{
 						// restore any available since screen reference
 						Reference refFrom = ReferenceStore.getReferenceByName(Reference.SCREEN_OFF_REF_FILENAME, this);
-						Reference refTo = StatsProvider.getInstance(this).getUncachedPartialReference(0);
-						ArrayList<StatElement> otherStats = stats.getOtherUsageStatList(true, refFrom, false, false, refTo);
+						StatsProvider.getInstance(this).setCurrentReference(0);
+						//Reference refTo = StatsProvider.getInstance(this).getUncachedPartialReference(0);
+						Reference refTo = ReferenceStore.getReferenceByName(Reference.CURRENT_REF_FILENAME, this);
+						ArrayList<StatElement> otherStats = null;
+						
+						// only process if both references are in the right order
+						if (refFrom.getCreationTime() < refTo.getCreationTime())
+						{		
+							otherStats = stats.getOtherUsageStatList(true, refFrom, false, false, refTo);
+						}
+						else
+						{
+							otherStats = null;
+						}
 
 						long timeAwake = 0;
 						long timeSince = 0;
 
 						if ( (otherStats != null) && ( otherStats.size() > 1) )
 						{
-							timeAwake = ((Misc) stats.getElementByKey(otherStats, "Awake")).getTimeOn();
-							timeSince = stats.getBatteryRealtime(StatsProvider.STATS_SCREEN_OFF);
 							
+							timeAwake = ((Misc) stats.getElementByKey(otherStats, StatsProvider.LABEL_MISC_AWAKE)).getTimeOn();
+							timeSince = stats.getBatteryRealtime(StatsProvider.STATS_SCREEN_OFF);
+							Log.i(TAG, "Other stats found. Since=" + timeSince + ", Awake=" + timeAwake);
 						}
 						else
 						{
 							// no stats means the phone was awake
 							timeSince = stats.getBatteryRealtime(StatsProvider.STATS_SCREEN_OFF);
 							timeAwake = timeSince;
+							Log.i(TAG, "Other stats do not have any data. Since=" + timeSince + ", Awake=" + timeAwake);
 						}
 						
 						if (timeSince > 0)
 						{
-							awakePct = ((int) (timeAwake / timeSince)) * 100;
+							awakePct = (int) ((timeAwake *100 / timeSince));
 						}
 						else
 						{
 							awakePct = 0;
 						}
 
+						Log.i(TAG, "Awake %=" + awakePct);
 						// we issue a warning if awakePct > awakeThresholdPct
 						if (awakePct >= awakeThresholdPct)
 						{
-							if (bShowToast)
-							{
-								Toast.makeText(this, "BBS: Awake alert: " + awakePct + "% awake", Toast.LENGTH_SHORT).show();
-							}
-
-							// notify the user of the situation
-					    	Notification notification = new Notification(
-					    			R.drawable.icon_notext, "Awake alert", System.currentTimeMillis());
+					    	// Instantiate a Builder object.
+					    	NotificationCompat.Builder builder = new NotificationCompat.Builder(this);
 					    	
-							Intent i = new Intent(Intent.ACTION_MAIN);
+					    	String alertText = "";
+					    	try
+					    	{
+					    		alertText = getString(R.string.message_awake_info, awakePct);
+					    	}
+					    	catch (Exception e)
+					    	{
+					    		alertText = getString(R.string.message_awake_alert);
+					    	}
+					    	
+					    	builder.setSmallIcon(R.drawable.ic_stat_notification);
+					        builder.setContentTitle(this.getText(R.string.app_name));
+					        builder.setContentText(alertText);
+					    	
+					    	// Creates an Intent for the Activity
+					    	Intent i = new Intent(Intent.ACTION_MAIN);
 							PackageManager manager = this.getPackageManager();
 							
 							i = manager.getLaunchIntentForPackage(this.getPackageName());
@@ -169,11 +170,16 @@ public class WatchdogProcessingService extends IntentService
 
 					    	PendingIntent contentIntent = PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_UPDATE_CURRENT);
 
-					    	notification.setLatestEventInfo(
-					    			this, this.getText(R.string.app_name), 
-					    			awakePct + "% awake while screen off", contentIntent);
-					    	NotificationManager nM = (NotificationManager)this.getSystemService(Service.NOTIFICATION_SERVICE);
-					    	nM.notify(EventWatcherService.NOTFICATION_ID, notification);
+					    	// Puts the PendingIntent into the notification builder
+					    	builder.setContentIntent(contentIntent);
+					    	// Notifications are issued by sending them to the
+					    	// NotificationManager system service.
+					    	NotificationManager mNotificationManager =
+					    	    (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+					    	// Builds an anonymous Notification object from the builder, and
+					    	// passes it to the NotificationManager
+					    	mNotificationManager.notify(EventWatcherService.NOTFICATION_ID, builder.build());
+
 						}
 					}
 				}

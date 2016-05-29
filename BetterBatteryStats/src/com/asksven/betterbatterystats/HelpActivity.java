@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 asksven
+ * Copyright (C) 2011-2015 asksven
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,12 @@ package com.asksven.betterbatterystats;
 
 import com.asksven.betterbatterystats.R;
 
-import android.app.Activity;
 import android.os.Bundle;
+import android.support.v7.widget.Toolbar;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
-public class HelpActivity extends Activity
+public class HelpActivity extends BaseActivity
 {
 	/**
 	 * @see android.app.Activity#onCreate(Bundle)
@@ -32,14 +32,24 @@ public class HelpActivity extends Activity
 	{
 		super.onCreate(savedInstanceState);
 		
+		String strTitle = getIntent().getStringExtra("title");
+		
 		setContentView(R.layout.helpwebview);
 		
+		Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+		toolbar.setTitle(strTitle);
+
+	    setSupportActionBar(toolbar);
+	    getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+	    getSupportActionBar().setDisplayUseLogoEnabled(false);
+	    
 		WebView browser = (WebView)findViewById(R.id.webview);
 
 	    WebSettings settings = browser.getSettings();
 	    settings.setJavaScriptEnabled(true);
 	    
 	    // retrieve any passed data (filename)
+	    
 	    String strFilename = getIntent().getStringExtra("filename");
 	    String strURL = getIntent().getStringExtra("url");
 	    

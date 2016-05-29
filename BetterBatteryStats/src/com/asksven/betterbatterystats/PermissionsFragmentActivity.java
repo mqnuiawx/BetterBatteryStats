@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 asksven
+ * Copyright (C) 2012-2014 asksven
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,15 +23,12 @@ import android.content.Context;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.FragmentManager;
+import android.support.v4.app.ListFragment;
 import android.support.v4.widget.SimpleCursorAdapter;
 import android.util.Log;
-import android.view.View;
-import android.widget.ListView;
-import com.actionbarsherlock.app.SherlockFragmentActivity;
-import com.actionbarsherlock.app.SherlockListFragment;
-import com.actionbarsherlock.view.Menu;
-import com.actionbarsherlock.view.MenuInflater;
-import com.actionbarsherlock.view.MenuItem;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import com.asksven.betterbatterystats.adapters.PermissionsAdapter;
 import com.asksven.betterbatterystats.data.Permission;
 import com.asksven.betterbatterystats.data.StatsProvider;
@@ -41,7 +38,7 @@ import com.asksven.betterbatterystats.R;
  * Demonstration of the use of a CursorLoader to load and display contacts data
  * in a fragment.
  */
-public class PermissionsFragmentActivity extends SherlockFragmentActivity
+public class PermissionsFragmentActivity extends BaseActivity
 {
 	
 
@@ -49,7 +46,8 @@ public class PermissionsFragmentActivity extends SherlockFragmentActivity
 	protected void onCreate(Bundle savedInstanceState)
 	{
 		super.onCreate(savedInstanceState);
-
+		// we need a layout to inflate the fragment into
+	    
 		FragmentManager fm = getSupportFragmentManager();
 
 		// Create the list fragment and add it as our sole content.
@@ -60,7 +58,7 @@ public class PermissionsFragmentActivity extends SherlockFragmentActivity
 		}
 	}
 
-	public static class PermissionsListFragment extends SherlockListFragment
+	public static class PermissionsListFragment extends ListFragment
 	{
 
 		/**
@@ -99,14 +97,6 @@ public class PermissionsFragmentActivity extends SherlockFragmentActivity
 
 		}
 
-
-		@Override
-		public void onListItemClick(ListView l, View v, int position, long id)
-		{
-			 // user clicked a list item, make it "selected"
-			 m_listViewAdapter.setSelectedPosition(position);
-		}
-
 	    /** 
 	     * Add menu items
 	     * 
@@ -138,7 +128,7 @@ public class PermissionsFragmentActivity extends SherlockFragmentActivity
 	    	Dialog dialog = new Dialog(context);
 	    	
 	    	dialog.setContentView(R.layout.permissions_legend_dialog);
-	    	dialog.setTitle("Legend");
+	    	dialog.setTitle(getString(R.string.label_legend));
 	
 	    	dialog.show();
 		}
@@ -187,7 +177,7 @@ public class PermissionsFragmentActivity extends SherlockFragmentActivity
 		    	if (m_progressDialog == null)
 		    	{
 			    	m_progressDialog = new ProgressDialog(getActivity());
-			    	m_progressDialog.setMessage("Computing...");
+			    	m_progressDialog.setMessage(getString(R.string.message_computing));
 			    	m_progressDialog.setIndeterminate(true);
 			    	m_progressDialog.setCancelable(false);
 			    	m_progressDialog.show();

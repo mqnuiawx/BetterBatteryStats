@@ -15,29 +15,10 @@
  */
 package com.asksven.betterbatterystats.adapters;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-
 import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.content.pm.PermissionInfo;
-import android.net.Uri;
-import android.preference.PreferenceManager;
-import android.provider.ContactsContract.Contacts;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
-import android.view.View.OnClickListener;
+import android.util.Log;
 import android.widget.ArrayAdapter;
-import android.widget.BaseAdapter;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-import com.asksven.android.common.privateapiproxies.StatElement;
-import com.asksven.betterbatterystats.R;
-import com.asksven.betterbatterystats.data.Permission;
 import com.asksven.betterbatterystats.data.Reference;
 import com.asksven.betterbatterystats.data.ReferenceStore;
 
@@ -69,15 +50,22 @@ public class ReferencesAdapter extends ArrayAdapter<String>
 		
 		if (posCurrent != -1)
 		{	
-			m_listNames.remove(posCurrent);
-			m_listLabels.remove(posCurrent);		
+			try
+			{
+				m_listNames.remove(posCurrent);
+				m_listLabels.remove(posCurrent);
+			}
+			catch (Exception e)
+			{
+				Log.e(TAG, "Error removing element " + posCurrent + " from lists " + m_listNames + " and " + m_listLabels);
+			}
 		}
 		this.notifyDataSetChanged();
 	}
 
 	private void refresh(Context context)
 	{
-		ReferenceStore.rebuildCache(context);
+//		ReferenceStore.rebuildCache(context);
 		m_listNames = ReferenceStore.getReferenceNames(null, context);
 		m_listLabels = ReferenceStore.getReferenceLabels(null, context);		
 	}

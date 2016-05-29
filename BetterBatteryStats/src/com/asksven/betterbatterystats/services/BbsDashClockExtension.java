@@ -22,27 +22,20 @@ import com.asksven.android.common.privateapiproxies.BatteryStatsProxy;
 import com.asksven.android.common.privateapiproxies.Misc;
 import com.asksven.android.common.privateapiproxies.StatElement;
 import com.asksven.android.common.utils.DateUtils;
+import com.asksven.android.common.utils.StringUtils;
 import com.asksven.betterbatterystats.LogSettings;
-import com.asksven.betterbatterystats.PreferencesActivity;
 import com.asksven.betterbatterystats.R;
 import com.asksven.betterbatterystats.StatsActivity;
 import com.asksven.betterbatterystats.data.Reference;
 import com.asksven.betterbatterystats.data.ReferenceStore;
 import com.asksven.betterbatterystats.data.StatsProvider;
-import com.asksven.betterbatterystats.widgetproviders.SmallWidgetProvider;
-import com.asksven.betterbatterystats.widgets.WidgetBattery;
 import com.google.android.apps.dashclock.api.DashClockExtension;
 import com.google.android.apps.dashclock.api.ExtensionData;
 
-import android.app.PendingIntent;
-import android.appwidget.AppWidgetManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.preference.PreferenceManager;
 import android.util.Log;
-import android.view.View;
 
 public class BbsDashClockExtension extends DashClockExtension
 {
@@ -93,7 +86,7 @@ public class BbsDashClockExtension extends DashClockExtension
 
 			if ( (otherStats != null) && ( otherStats.size() > 1) )
 			{
-				Misc timeAwakeStat = (Misc) stats.getElementByKey(otherStats, "Awake");
+				Misc timeAwakeStat = (Misc) stats.getElementByKey(otherStats, StatsProvider.LABEL_MISC_AWAKE);
 				if (timeAwakeStat != null)
 				{
 					timeAwake = timeAwakeStat.getTimeOn();
@@ -126,7 +119,8 @@ public class BbsDashClockExtension extends DashClockExtension
 				
 			}
 
-			strAwake = DateUtils.formatDurationCompressed(timeAwake);
+			//strAwake = DateUtils.formatDurationCompressed(timeAwake);
+			strAwake = StringUtils.formatRatio(timeAwake, timeSince);
 			if (timeSince != 0)
 			{
 				float pct = drain / ((float)timeSince / 1000F / 60F / 60F);
@@ -140,7 +134,7 @@ public class BbsDashClockExtension extends DashClockExtension
 
 		String refs = getString(R.string.label_since) + " " + Reference.getLabel(refFrom);
 		// Publish the extension data update.
-		publishUpdate(new ExtensionData().visible(true).icon(R.drawable.icon_notext).status(strDrain)
+		publishUpdate(new ExtensionData().visible(true).icon(R.drawable.ic_dashclock).status(strDrain + ", " + strAwake)
 				.expandedTitle(strAwake + " " + getString(R.string.label_awake_abbrev) + ", " + strDrain).expandedBody(refs)
 				.clickIntent(new Intent(this, StatsActivity.class)));
 	}

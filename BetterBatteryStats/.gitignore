@@ -1,6 +1,8 @@
 /gen
 /signed
 /bin
+/bin-ant
 /BetterBatteryStats_*.apk
 /local.properties
 /ant.properties
+/bin-ant
